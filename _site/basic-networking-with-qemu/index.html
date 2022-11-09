@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Personal blog about low-level programming, security, and open-source software.">
+
+  <title>
+    
+      T_PAGEFLT - Basic networking with QEMU
+    
+  </title>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+
+</head>
+
+
+  <body>
+    <nav class="nav">
+      <div class="nav-container">
+        <a href="/">
+          <h2 class="nav-title">T_PAGEFLT</h2>
+        </a>
+        <ul>
+          <li><a href="/">Posts</a></li>
+          <li><a href="/about">About</a></li>
+        </ul>
+    </div>
+  </nav>
+
+    <main>
+      <div class="post">
+  <div class="post-info">
+    
+      <h1 class="post-title">Basic networking with QEMU</h1>
+    
+
+    
+      <time datetime="2018-01-13">January 13, 2018</time>
+    
+  </div>
+  <p>If you’re coming to QEMU from a different virtualization platform, the networking bits might seem confusing at first. The <a href="https://wiki.qemu.org/Documentation/Networking">official networking documentation</a> is far from complete, and it takes some sifting through different sources of information before you can get a decent grasp on the topic.</p>
+
+<p>I’d like to summarize here the basic information required to quickly and painlessly get the network configuration out of the way, so you can concentrate on whatever task you’re actually working on.</p>
+
+<p>Generally, <strong>user networking</strong> and <strong>bridged networking</strong> modes should suffice for most use cases, and this is what the rest of this post will be dealing with. Be aware that the <em>“bridged networking mode”</em> is referred to as <em>“tap networking backend”</em> within the QEMU documentation.</p>
+
+<h2 id="user-networking">User networking</h2>
+
+<p>This is the default networking mode. It requires no configuration on the VM host, no additional privileges, and often no passing of network-related command-line arguments to the QEMU executable. If your guest is set to automatically configure its network interface through DHCP, the following invocation of QEMU should be sufficient for this mode:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ qemu-system-x86_64 -enable-kvm -nographic -hda ./vdisk.img
+</code></pre></div></div>
+
+<p>By default, your guest will have the following view of the network:</p>
+
+<ul>
+  <li>10.0.2.15/24 - Guest’s IP address</li>
+  <li>10.0.2.2/24 - Gateway/VM host</li>
+  <li>10.0.2.3/24 - DNS resolver</li>
+  <li>10.0.2.4/24 - SMB server (<em>Optional. Requres SMB server on the host system</em>)</li>
+</ul>
+
+<p>Your guest should also be able to connect to any network your VM host has access to, unless there are firewall rules preventing it. It’s important to keep in mind that in this mode your guest can only communicate over TCP and UDP protocols. ICMP-based utilities such as <code class="highlighter-rouge">ping</code> and <code class="highlighter-rouge">traceroute</code> will not be functional, and therefore unfit for network connectivity tests.</p>
+
+<p>Despite being able to access network resources over TCP and UDP protocols, the guest itself is not directly accessible unless port forwarding is put in place. It can be enabled through the <code class="highlighter-rouge">hostfwd</code> option to the <code class="highlighter-rouge">-netdev</code> command-line argument. The syntax is the following:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>hostfwd=[tcp|udp]:[hostaddr]:hostport-[guestaddr]:guestport
+</code></pre></div></div>
+
+<p>For example, in order to access the guest from your VM host over SSH, you would forward the port 2222/tcp on the VM host to the port 22/tcp on the guest in the following manner:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ qemu-system-x86_64 -enable-kvm -nographic -hda ./vdisk.img \
+                     -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+                     -device e1000,netdev=net0
+</code></pre></div></div>
+
+<p>Assuming your guest performs automatic network configuration through DHCP and it starts its SSH daemon upon boot, you should be able to connect to it:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ ssh -p 2222 localhost
+</code></pre></div></div>
+
+<p>In order to forward multiple ports, the <code class="highlighter-rouge">hostfwd</code> option can be specified multiple times.</p>
+
+<p><em class="warning"><strong>Note:</strong> You can skip the network-related command-line parameters only when you want the default user-mode network configuration. If you enable any non-default features, such as port forwarding, you’re expexpected to specify both the network backend information through the <code class="highlighter-rouge">-netdev</code> argument and the network device driver details through the <code class="highlighter-rouge">-device</code> argument. Failure to do so will render your guest without network capabilities.</em></p>
+
+<p>Another thing to keep in mind is that the user networking mode relies on a network stack that is entirely implemented in userspace, within the QEMU process. This has a major impact on guest’s network performance.</p>
+
+<h2 id="bridged-networking-with-qemu-bridge-helper">Bridged networking with qemu-bridge-helper</h2>
+
+<p>You should use bridged networking mode for your QEMU guests if you’re dealing with any the following scenarios:</p>
+
+<ul>
+  <li>The network performance aspect of your guests is important</li>
+  <li>You’re working with network protocols beyond TCP and UDP</li>
+  <li>Your guests must be reachable from external networks</li>
+</ul>
+
+<p>Since version 1.1, QEMU ships with the <code class="highlighter-rouge">qemu-bridge-helper</code> utility, which greatly simplifies the configuration of bridged networking for your guests.</p>
+
+<p>In order to enable bridged networking for your QEMU guests, you must first create and configure a bridge interface on your host. For example, Ubuntu 17.04 uses <code class="highlighter-rouge">netplan</code> for network configuration. In order to configure a statically-addressed bridge interface <code class="highlighter-rouge">br0</code> consisting of your ethernet interface <code class="highlighter-rouge">enp0s25</code>, the netplan configuration file (<code class="highlighter-rouge">/etc/netplan/01-netcfg.yaml</code>) would resemble the following:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    enp0s25:
+      dhcp4: false
+  bridges:
+    br0:
+      interfaces: [enp0s25]
+      addresses:
+          - 192.168.1.2/24
+      gateway4: 192.168.1.254
+      nameservers:
+        search: [home]
+        addresses: [8.8.8.8, 8.8.4.4]
+      parameters:
+        stp: false
+        forward-delay: 0
+</code></pre></div></div>
+
+<p>In order for the configuration to take effect, it must be applied with the <code class="highlighter-rouge">netplan</code> utility:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ sudo netplan --debug apply
+</code></pre></div></div>
+
+<p>This is a OS/distribution-specific task, so you’ll have to refer to your platform’s documentation for more details.</p>
+
+<p>Next, you must specify the newly-created bridge interface in <code class="highlighter-rouge">/etc/qemu/bridge.conf</code>:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ sudo mkdir /etc/qemu
+$ sudo touch /etc/qemu/bridge.conf &amp;&amp; sudo chmod 644 /etc/qemu/bridge.conf
+$ sudo sh -c "echo 'allow br0' &gt;&gt; /etc/qemu/bridge.conf"
+</code></pre></div></div>
+
+<p>Finally, in order for non-privileged processes to be able to invoke <code class="highlighter-rouge">qemu-bridge-helper</code>, you must set the SETUID bit on the utility:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ sudo chmod u+s /usr/local/libexec/qemu-bridge-helper
+</code></pre></div></div>
+<p><em class="warning"><strong>Note:</strong> Be aware that by setting the SETUID bit on a root-owned binary, you’re exposing your system to a potential privilege escalation attack in case the aforementioned binary is affected by a security issue. Proceed with caution.</em></p>
+
+<p>You should now be able to invoke QEMU as an unpriviledged user and make use of the bridged networking backend:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ qemu-system-x86_64 -enable-kvm -nographic -hda ./vdisk.img \
+                     -netdev bridge,id=net0,br=br0 -device e1000,netdev=net0
+</code></pre></div></div>
+
+<p>If your guest is set to configure networking through DHCP, it should have acquired an address from your network’s DHCP server.</p>
+
+<p><strong>Further reading:</strong></p>
+<ul>
+  <li><a href="https://wiki.qemu.org/Documentation/Networking">QEMU Networking documentation</a></li>
+  <li><a href="https://wiki.qemu.org/Features/HelperNetworking">qemu-bridge-helper documentation</a></li>
+  <li><a href="https://en.wikibooks.org/wiki/QEMU/Networking">QEMU Networking on Wikibooks</a></li>
+  <li><a href="https://wiki.archlinux.org/index.php/QEMU">Extensive QEMU documentation on ArchLinux wiki</a></li>
+</ul>
+
+
+ <div class="post-comment">
+   You can comment <a target="_blank" href="mailto:t.pagef.lt@gmail.com?subject=[Basic networking with QEMU]" >here</a>.
+ </div>
+
+</div>
+
+    </main>
+
+    <footer>
+      <span>Copyright &copy; <time datetime="2018">2018</time> Dimitris Karagkasidis</span>
+      <span class="contact">
+        <a href="mailto:t.pagef.lt@gmail.com">E-Mail</a>&nbsp;|&nbsp;
+        <a href="https://twitter.com/t_pageflt" target="_blank">Twitter</a>&nbsp;|&nbsp;
+        <a href="https://bsd.network/@t_pageflt" target="_blank">Mastodon</a>&nbsp;|&nbsp;
+        <a href="https://github.com/pageflt" target="_blank">Github</a>&nbsp;|&nbsp;
+        <a href="https://t.pagef.lt/assets/t_pageflt.asc" target="_blank">PGP</a>
+      </span>
+    </footer>
+  </body>
+</html>

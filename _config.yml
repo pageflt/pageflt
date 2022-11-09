@@ -1,2 +1,25 @@
-title: T_PAGEFLT
-description: GH Pages site
+# Site settings
+title:          T_PAGEFLT
+description:    "Personal blog about low-level programming, security, and open-source software."
+url:            "https://t.pagef.lt"
+
+# Author
+author:
+  name:         Dimitris Karagkasidis
+  url:          https://t.pagef.lt
+  email:        t.pagef.lt@gmail.com
+  twitter:      https://twitter.com/t_pageflt
+  github:       https://github.com/pageflt
+  mastodon:     https://bsd.network/@t_pageflt
+  pgp:          https://t.pagef.lt/assets/t_pageflt.asc
+
+# Build settings
+markdown:       kramdown
+
+# Assets
+sass:
+  sass_dir:     _sass
+  style:        compressed
+
+# Permalinks
+permalink:      /:title

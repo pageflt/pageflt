@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  {% include head.html %}
+
+  <body>
+    <nav class="nav">
+      <div class="nav-container">
+        <a href="{{ site.baseurl }}/">
+          <h2 class="nav-title">{{ site.title }}</h2>
+        </a>
+        <ul>
+          <li><a href="{{ site.baseurl }}/">Posts</a></li>
+          <li><a href="{{ '/about' | prepend: site.baseurl }}">About</a></li>
+        </ul>
+    </div>
+  </nav>
+
+    <main>
+      {{ content }}
+    </main>
+
+    <footer>
+      <span>Copyright &copy; <time datetime="{{ site.time | date: '%Y' }}">{{ site.time | date: '%Y' }}</time> {{ site.author.name }}</span>
+      <span class="contact">
+        <a href="mailto:{{ site.author.email }}">E-Mail</a>&nbsp;|&nbsp;
+        <a href="{{ site.author.twitter }}" target="_blank">Twitter</a>&nbsp;|&nbsp;
+        <a href="{{ site.author.mastodon }}" target="_blank">Mastodon</a>&nbsp;|&nbsp;
+        <a href="{{ site.author.github }}" target="_blank">Github</a>&nbsp;|&nbsp;
+        <a href="{{ site.author.pgp }}" target="_blank">PGP</a>
+      </span>
+    </footer>
+  </body>
+</html>

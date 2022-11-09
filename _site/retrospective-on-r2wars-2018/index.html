@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Personal blog about low-level programming, security, and open-source software.">
+
+  <title>
+    
+      T_PAGEFLT - Retrospective on r2wars 2018
+    
+  </title>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+
+</head>
+
+
+  <body>
+    <nav class="nav">
+      <div class="nav-container">
+        <a href="/">
+          <h2 class="nav-title">T_PAGEFLT</h2>
+        </a>
+        <ul>
+          <li><a href="/">Posts</a></li>
+          <li><a href="/about">About</a></li>
+        </ul>
+    </div>
+  </nav>
+
+    <main>
+      <div class="post">
+  <div class="post-info">
+    
+      <h1 class="post-title">Retrospective on r2wars 2018</h1>
+    
+
+    
+      <time datetime="2018-09-10">September 10, 2018</time>
+    
+  </div>
+  <p>Between 5th and 8th of September I attended r2con, the annual <a href="https://www.radare.org/r/">radare2</a> conference in Barcelona, Spain. This highly-technical, single-track event consisted of multiple training sessions, workshops, and talks, all revolving around topics such as reverse engineering, binary exploitation, malware analysis, software instrumentation, niche hardware platforms, and even chiptune music production. Check out the <a href="https://www.radare.org/con/2018/">event page</a> and the <a href="https://github.com/radareorg/r2con2018/">r2con2018 Github repository</a> for more details.</p>
+
+<p>This post is about my entries in the <a href="https://www.radare.org/con/2018/competitions.html#r2wars">r2wars</a> competition that took place during r2con2018. If you’re into wargames, CTFs, competitive programming, low-level programming tricks, or preparing for a future r2wars event, keep reading.</p>
+
+<h2 id="the-game">The Game</h2>
+
+<p>This is the “official” description of the game:</p>
+
+<blockquote>
+  <p>r2wars is a game similar to corewars, where 2 programs run on a shared memory space trying to catch each other in order to trash their code and make them crash.</p>
+</blockquote>
+
+<p>More details can be found <a href="https://github.com/radare/radare2-extras/tree/master/r2wars">here</a>, but the crux of the matter is the following:</p>
+
+<ul>
+  <li>The bots must be written in <code class="highlighter-rouge">x86</code>, <code class="highlighter-rouge">ARM</code> or <code class="highlighter-rouge">MIPS</code> assembly.</li>
+  <li>On every run, exactly 2 programs compete against each other.</li>
+  <li>Both programs share the same address space of 1024 bytes, and a separate but shared (<em>I think</em>) stack.</li>
+  <li>On every run, both programs are loaded at random locations within the shared address space.</li>
+  <li>The r2wars scheduler will execute one instruction from each program, on every cycle. Execution of complex instructions, such as the <code class="highlighter-rouge">REP</code> instruction family on <code class="highlighter-rouge">x86</code>, gets adjusted accordingly in order to reflect the “one operation per cycle” principle.</li>
+  <li>In order to win a run, a program must either overwrite the opponent, or simply outlive it by waiting for it to execute an illegal instruction or reference an illegal memory address.</li>
+  <li>There is a limit of 8000 cycles per run, which results in a draw when reached.</li>
+  <li>Every game iteration is a tournament, where the winners are the top 3 highest-scoring bots.</li>
+</ul>
+
+<h2 id="youre-doing-it-wrong">You’re doing it wrong!</h2>
+
+<p>If you’re a seasoned assembly programmer or spent the best years of your life optimizing shellcode, you’ll notice that these bots are far from optimal -and you’ll be right. All my submissions were hacked together during breaks, in crowded and noisy rooms, in an attempt to meet submission deadlines.</p>
+
+<h2 id="development--debugging">Development &amp; Debugging</h2>
+
+<p>The r2wars environment that was used during the event can be found <a href="https://github.com/radareorg/r2wars">here</a>. Unfortunatelly, it’s written in C# and I did not have the patience to resolve the dependencies and the build errors on my FreeBSD laptop.</p>
+
+<p><img src="/assets/production.jpg" alt="I don't always test my code - But when I do, I do it in production" /></p>
+
+<p>I also have to admit that my r2 skills are not something to write home about, so I used the following ghetto approach to develop and debug my bots:</p>
+
+<ul>
+  <li>Bang-out <code class="highlighter-rouge">x86</code> instructions in vim</li>
+  <li>Encode them into hex-pairs:
+    <div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ rasm2 -b 32 -a x86 -f &lt;filename&gt;
+</code></pre></div>    </div>
+  </li>
+  <li>Start <code class="highlighter-rouge">radare2</code> with 1024 bytes of addressable memory, initialize ESIL, write the hex-pairs into the address space, initialize the stack and program counter registers, fire-up the debugger in visual mode:
+    <div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ radare2 -ax86 -b32 malloc://1024
+[0x00000000]&gt; aei
+[0x00000000]&gt; aeim
+[0x00000000]&gt; wx [hex-pairs] @100
+[0x00000000]&gt; aer PC=100
+[0x00000000]&gt; aer SP=200
+[0x00000000]&gt; V!
+</code></pre></div>    </div>
+  </li>
+  <li>Step through the code using F8 while monitoring the content of the registers</li>
+  <li>Repeat Ad Nauseum</li>
+</ul>
+
+<h2 id="the-good-one">The Good One</h2>
+
+<p>After contemplating various strategies, I decided on a 2-stage offensive approach:</p>
+
+<ol>
+  <li>Copy the active payload to a known location within the 1KB address space.</li>
+  <li>Jump into the active payload and start trashing the address space, from top to bottom.</li>
+</ol>
+
+<p>I used variations of this strategy in 4 out of 5 games in total. This bot made it into the winning triplet every time that it was used, so it’s safe to say it wasn’t a bad approach.</p>
+
+<p>You can find all my bots on <a href="https://github.com/pageflt/r2wars-2018">Github</a></p>
+
+<h3 id="game-1-2nd-place">Game #1 [2nd place]</h3>
+
+<p>This is what my initial submission looked like:</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mov eax, 0xc3c3c3c3	; [1]
+mov ebx, eax
+mov ecx, eax
+mov edx, eax
+mov ebp, eax
+mov edi, eax
+mov esp, 1020		; [2]
+mov esi, 1021		; [3]	
+mov [esi], 0xe6ff60	; [4]
+jmp esi			; [5]
+</code></pre></div></div>
+
+<p>My intent here is to keep the active payload as small and fast as possible. The payload consists of only 3 bytes, and it’s the following:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>pushad	; 60
+jmp esi	; ffe6
+</code></pre></div></div>
+
+<p>The <code class="highlighter-rouge">pushad</code> instruction is amazing. Not only you get to write 32 bytes worth of data (all <code class="highlighter-rouge">x86</code> general-purpose registers) wherever your stack register is pointing, it also decreases the stack pointer by the amount of bytes it pushed, all in a single byte.</p>
+
+<p>As you can see in <code class="highlighter-rouge">[3][4][5]</code>, I copy the aforementioned active payload into addresses 1021-1023, set the <code class="highlighter-rouge">esi</code> register to always point to the active payload, and start executing it. I’ve set the stack pointer to point right below my active payload (<code class="highlighter-rouge">[2]</code>), so this loop will trash the entire address space, top-to-bottom, 32 bytes at a time. <em>(Remember that <code class="highlighter-rouge">x86</code> stack grows towards smaller addresses.)</em></p>
+
+<p>Because of <code class="highlighter-rouge">[1]</code>, the stack will be <em>mostly</em> full of <code class="highlighter-rouge">0xc3</code> bytes, which is the <code class="highlighter-rouge">ret</code> instruction in <code class="highlighter-rouge">x86</code> ISA. So, if another <code class="highlighter-rouge">x86</code> bot attempts to execute instructions within an area I already wrote-through, it will pop a random value from the stack and try to return there, which will most likely trigger an illegal memory access and result in a crash.</p>
+
+<p>Now, the obvious problem with this bot is that it can trash the executable address space only once, before the stack pointer reaches 0 and wraps-up, triggerring memory access violation. So nothing fancy here, but it was a good start and it earned me the 2nd place in that round.</p>
+
+<h3 id="game-2-1st-place">Game #2 [1st place]</h3>
+
+<p>In this iteration of the game I patched the aforementioned issue. This increased the size of my active payload and made my bot a bit slower, but now, as long as my active payload is not corrupted, my bot will not crash itself.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mov eax, 0xc3c3c3c3	; [1]
+mov ebx, eax
+mov ecx, eax
+mov edx, eax
+mov edi, 32		; [2]
+mov ebp, 0x3fc		; [3]
+mov edx, 1014		; [4]
+mov esp, edx		; [5]
+mov esi, 1015		; [6]
+mov [esi],   0x7ffc3960	; [7]
+mov [esi+4], 0xffd489fb	; [8]
+mov [esi+8], 0xe6	; [9]
+jmp esi			; [10]
+
+</code></pre></div></div>
+
+<p>The new active playload is now 9 bytes (<code class="highlighter-rouge">[7][8][9]</code>) and it lives at address range [1015-1023]. It consists of the following instructions:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>pushad		; 60
+cmp esp, edi	; 39fc
+jg 0x3f7 	; 7ffb
+mov esp, edx 	; 89d4
+jmp esi 	; ffe6
+</code></pre></div></div>
+
+<p>The reason behind comparing registers to registers, instead registers to constant values, is that the opcodes for register-to-register comparison are shorter, resulting in a smaller payload.</p>
+
+<p>I’m checking whether the stack pointer has surpassed the 32nd byte of the address space, since performing a <code class="highlighter-rouge">pushad</code> beyond this point will result in memory access violation. If that’s the case, I set the stack pointer back to its initial state -just below the active payload- and start trashing the address space once again.</p>
+
+<p>Now, there are 2 issues with this approach:</p>
+<ol>
+  <li>I don’t overwrite the last 32 bytes of the address space, so a competitor can hide there and eventually take me out.</li>
+  <li>There are no measures to prevent other <code class="highlighter-rouge">x86</code>-based competitors from executing my payload. This happened a couple of times and resulted in time-outs and draws.</li>
+</ol>
+
+<h3 id="game-3-aka-the-one-with-the-stack-3rd-place">Game #3 aka “The One With The Stack” [3rd place]</h3>
+
+<p>My bot now trashes the <em>entire</em> address space, except the region of my active payload. It also trashes the active payload delivery sequence before jumping into the active payload. This prevents my opponents from successfully executing my code since their registers are out-of-sync with mine.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mov eax, 0xc3c3c3c3	; [1]
+mov ebx, eax
+mov ecx, eax
+mov edx, eax
+mov edi, 32
+mov ebp, 0x3fc
+mov edx, 1011
+mov esi, 1012
+mov [esi],   0x7ffc3960	; [2]
+mov [esi+4], 0x60fc89fb	; [3]
+mov [esi+8], 0xe6ffd489 ; [4]
+call self_pwn		; [5]
+self_pwn:		; [6]
+pop esp			; [7]
+sub esp, 8		; [8]
+pushad			; [9]
+mov esp, edx		; [10]
+jmp esi			; [11]
+</code></pre></div></div>
+
+<p>The active payload this time is 12 bytes (<code class="highlighter-rouge">[2][3][4]</code>):</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>pushad		; 60
+cmp esp, edi	; 39fc
+jg 0x3f4 	; 7ffb
+mov esp, edi 	; 89fc
+pushad		; 60
+mov esp, edx 	; 89d4
+jmp esi 	; ffe6
+</code></pre></div></div>
+
+<p>Whenever my stack pointer ends-up below the first 32 bytes of the address space, I set it back to 32 and perfom a <code class="highlighter-rouge">pushad</code> which successfully overwrites the area that I missed earlier. Then I set it again just below my active payload, and start trashing the address space again.</p>
+
+<p>I also overwrite the initial sequence that generates the active payload and jumps into it, in <code class="highlighter-rouge">[5][6][7][8][9]</code>. I use the <code class="highlighter-rouge">call</code>/<code class="highlighter-rouge">pop esp</code> sequence to acquire the address of that initial sequence, tweak the stack pointer, and proceed to trash it with <code class="highlighter-rouge">pushad</code>. Once this is done, I set the stack pointer back to its upper limit, jump into my active payload and start trashing the address space.</p>
+
+<p>Now this is where things get rather dramatic. <a href="https://twitter.com/Aissn">@Aissn</a> and <a href="https://twitter.com/kbeckmann">@kbeckmann</a> come up with the same idea: use the stack for code execution. This increased the duration of the game from the typical runtime of 10m, to 1h 15m. No other bots were actively using the stack, so this game had a lot of time-outs and draws. The game ended with <code class="highlighter-rouge">@aissn</code> and <code class="highlighter-rouge">@kbeckmann</code> getting the first 2 places, and my bot was ranked 3rd.</p>
+
+<p>After this, <a href="https://twitter.com/sanguinawer">SkUaTeR</a> patched the game environment and set the stack to be non-executable.</p>
+
+<h3 id="game-4-1st-place">Game #4 [1st place]</h3>
+
+<p>The 4th game of r2wars took place on Saturday morning. I just used the same version and ranked 1st.</p>
+
+<p>This was probably a good time to stop changing my bot. Instead, I rewrote my bot to use a completely different strategy. Although I can’t know for sure, I suspect this led to my demise during the final game. Which brings us to the next section…</p>
+
+<h2 id="the-not-so-good-one">The Not-So-Good One</h2>
+
+<p><img src="/assets/mistakes.jpg" alt="Mistakes" /></p>
+
+<p>At some point during the conference, <a href="https://twitter.com/kbeckmann">@kbeckmann</a> mentioned something about keeping the payload within general-purpose registers at all times, and somehow executing it. I decided to experiment with this idea. The bad news is that my bot ranked 4th in this game. The good news is that I suspect that I found bugs in ESIL, which was pretty much the entire point of r2wars.</p>
+
+<h3 id="game-5-4th-place">Game #5 [4th place]</h3>
+
+<p>The main strategy behind this bot is the following:</p>
+
+<ul>
+  <li>Keep the active payload within <code class="highlighter-rouge">edi</code> and <code class="highlighter-rouge">esi</code> registers</li>
+  <li>Descend the address space 32 bytes at a time using <code class="highlighter-rouge">pushad</code>, and jump to <code class="highlighter-rouge">esp</code>, which will always be pointing into the contents of <code class="highlighter-rouge">edi</code> and <code class="highlighter-rouge">esi</code> following a <code class="highlighter-rouge">pushad</code>.</li>
+</ul>
+
+<p>This approach overwrites the entire address space, and the active payload is constantly on the move. It’s like surfing a wave:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mov eax, 0xc3c3c3c3	; [1]
+mov ebx, 1024		; [2]
+mov ecx, 0		; [3]
+mov edx, 0x90909000	; [4]
+mov esi, 0xe4ff60e3	; [5]
+mov edi, 0x440fcc39	; [6]
+call pwn		; [7]
+pwn:			; [8]
+pop esp			; [9]
+sub esp,4		; [10]
+pushad			; [11]
+mov esp, ebx		; [12]
+pushad			; [13]
+jmp esp			; [14]
+</code></pre></div></div>
+
+<p>I reused multiple ideas from my previous bots:</p>
+<ul>
+  <li>Filling the stack with <code class="highlighter-rouge">ret</code> instrictions: (<code class="highlighter-rouge">[1]</code>)</li>
+  <li>Keeping the payload short by using register-to-register comparison and storing the limits in <code class="highlighter-rouge">ebx</code>, <code class="highlighter-rouge">ecx</code> (<code class="highlighter-rouge">[2][3]</code>)</li>
+  <li>Trashing the initial stage to prevent enemy bots from executing my code (<code class="highlighter-rouge">[7][8][9[10]</code>)</li>
+</ul>
+
+<p>The active payload is the following:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cmp esp, ecx	; 39cc
+cmove esp, ebx	; 0f44e3
+pushad		; 60
+jmp esp 	; ffe4
+</code></pre></div></div>
+
+<p>In this scenario, I start at the very top of the address space (1024), and trash it by 32 bytes at a time. Part of the data that I use to trash the address space is my actual payload, and <code class="highlighter-rouge">esp</code> is always pointing there, so every time I overwrite the address space I jump into <code class="highlighter-rouge">esp</code>, shifting my active payload by 32 bytes. Whenever the stack pointer reaches the address 0, I reset it back to 1024 with a <code class="highlighter-rouge">cmove</code>, and start all over.</p>
+
+<h2 id="final-words">Final Words</h2>
+
+<p>The r2wars competition was definitelly one of the highlights of r2con2018. The organization team was also very generous and rewarded r2wars competitors with some really cool <code class="highlighter-rouge">radare2</code> merchandise.</p>
+
+<p>Something that I didn’t pay attention to during the games but realized during this retrospective, is that the r2wars event was great demonstration of the power of the <code class="highlighter-rouge">radare2</code> framework. Working through this competition with <code class="highlighter-rouge">r2</code> and <code class="highlighter-rouge">rasm2</code> was a breeze and saved me <em>a ton</em> of time and effort. I could just concentrate on what I was actually doing instead of wasting time and energy fighting my toolchain, which would be the case if I played this event using some combination of <code class="highlighter-rouge">gdb</code>, <code class="highlighter-rouge">objdump</code>, Python, C and <code class="highlighter-rouge">mmap(3)</code>.</p>
+
+<p>So yeah. Come and fight me on r2wars @ r2con2019.</p>
+
+<p><img src="/assets/fightme.png" alt="fight me bruh" /></p>
+
+
+ <div class="post-comment">
+   You can comment <a target="_blank" href="mailto:t.pagef.lt@gmail.com?subject=[Retrospective on r2wars 2018]" >here</a>.
+ </div>
+
+</div>
+
+    </main>
+
+    <footer>
+      <span>Copyright &copy; <time datetime="2018">2018</time> Dimitris Karagkasidis</span>
+      <span class="contact">
+        <a href="mailto:t.pagef.lt@gmail.com">E-Mail</a>&nbsp;|&nbsp;
+        <a href="https://twitter.com/t_pageflt" target="_blank">Twitter</a>&nbsp;|&nbsp;
+        <a href="https://bsd.network/@t_pageflt" target="_blank">Mastodon</a>&nbsp;|&nbsp;
+        <a href="https://github.com/pageflt" target="_blank">Github</a>&nbsp;|&nbsp;
+        <a href="https://t.pagef.lt/assets/t_pageflt.asc" target="_blank">PGP</a>
+      </span>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+.catalogue {
+  list-style-type: none;
+
+  &-title {
+    color: $default-shade;
+    display: block;
+    font-family: $sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    margin: .5rem 0;
+  }
+
+  &-title:hover {
+    text-decoration: underline;
+  }
+
+}

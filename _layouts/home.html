@@ -1,0 +1,8 @@
+---
+layout: default
+---
+<ul class="catalogue">
+  {% for post in site.posts %}
+    <li><a href="{{ post.url }}" class="catalogue-title">&raquo; {{ post.title }}</a></li>
+  {% endfor %}
+</ul>
