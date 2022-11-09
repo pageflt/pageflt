@@ -10,7 +10,7 @@ author:
   email:        t.pagef.lt@gmail.com
   twitter:      https://twitter.com/t_pageflt
   github:       https://github.com/pageflt
-  mastodon:     https://infosec.exchange/web/@t_pageflt 
+  mastodon:     https://infosec.exchange/@t_pageflt 
 
 # Build settings
 markdown:       kramdown
